@@ -9,11 +9,13 @@
 
 </div>
 
-This library allows you filter UI message chunks returned from `streamText()` by their corresonpding UI message part type. 
+This library allows you filter UI message chunks returned from [`streamText()`](https://ai-sdk.dev/docs/reference/ai-sdk-core/stream-text) by their corresponding UI message part type. 
 
 ### Why?
 
-By default, the `UIMessageChunk` stream from `toUIMessageStream()` will stream all parts (text, tools, data, etc.) to the client. Tool calls often contain large amounts of data or senstive information that should not be visible on the client. This library provides a type-safe filter to apply selective streaming of certain message parts.
+The AI SDK UI message stream created by [`toUIMessageStream()`](https://ai-sdk.dev/docs/reference/ai-sdk-core/stream-text#to-ui-message-stream) streams all parts (text, tools, data, etc.) to the client. 
+Tool calls, like database queries often contain large amounts of data or sensitive information that should not be visible on the client. 
+This library provides a type-safe filter to apply selective streaming of certain message parts.
 
 ### Installation
 
@@ -25,10 +27,10 @@ npm install ai-filter-stream
 
 ### Usage
 
-Use the `filterUIMessageStream` function to wrap the UI message stream from `result.toUIMessageStream()` and provide a filter to include or exclude certain UI message parts:
+Use the `filterUIMessageStream` function to wrap the UI message stream from [`result.toUIMessageStream()`](https://ai-sdk.dev/docs/reference/ai-sdk-core/stream-text#to-ui-message-stream) and provide a filter to include or exclude certain UI message parts:
 
 > [!NOTE]  
-> Providing a `MyUIMessage` type `filterUIMessageStream<MyMessage>()` is optional and only required for type-safety so that the part type is inferred based on your tools and data parts.
+> Providing a [`MyUIMessage`](https://ai-sdk.dev/docs/reference/ai-sdk-core/ui-message#creating-your-own-uimessage-type) type to `filterUIMessageStream<MyMessage>()` is optional and only required for type-safety so that the part type is inferred based on your tools and data parts.
 
 ```typescript
 import { streamText } from 'ai';
@@ -37,14 +39,15 @@ import type { UIMessage, InferUITools } from 'ai';
 
 type MyUIMessageMetadata = {};
 
-type MyDatapart = {};
+type MyDataPart = {};
 
 type MyTools = InferUITools<typeof tools>;
 
 // Define your UI message type for type safety
+// See: https://ai-sdk.dev/docs/reference/ai-sdk-core/ui-message
 type MyUIMessage = UIMessage<
   MyUIMessageMetadata, // or unknown
-  MyDatapart, // or unknown
+  MyDataPart, // or unknown
   MyTools,
 >;
 
@@ -94,50 +97,40 @@ const stream = filterUIMessageStream<MyMessage>(result.toUIMessageStream(), {
 
 ## Part Type Mapping
 
-The filter operates on UI message **part types**, not chunk types:
+The filter operates on [UIMessagePart](https://ai-sdk.dev/docs/reference/ai-sdk-core/ui-message#uimessagepart-types) part types, which are derived from [UIMessageChunk](https://github.com/vercel/ai/blob/main/packages/ai/src/ui-message-stream/ui-message-chunks.ts) chunk types:
 
-| Chunk Type(s)                                                        | Part Type         | Example                           |
-| -------------------------------------------------------------------- | ----------------- | --------------------------------- |
-| `text-start`, `text-delta`, `text-end`                               | `text`            | Text content                      |
-| `reasoning-start`, `reasoning-delta`, `reasoning-end`                | `reasoning`       | Reasoning content                 |
-| `tool-input-start`, `tool-input-available`, etc. (for static tools)  | `tool-{name}`     | `tool-weather`, `tool-calculator` |
-| `tool-input-start`, `tool-input-available`, etc. (for dynamic tools) | `dynamic-tool`    | Dynamic tool calls                |
-| `start-step`                                                         | `step-start`      | Step boundary marker              |
-| `file`                                                               | `file`            | File content                      |
-| `source-url`                                                         | `source-url`      | URL sources                       |
-| `source-document`                                                    | `source-document` | Document sources                  |
+| Part Type         | Chunk Types                           |
+| ----------------- | ------------------------------------- |
+| [`text`](https://ai-sdk.dev/docs/reference/ai-sdk-core/ui-message#textuipart)            | `text-start`, `text-delta`, `text-end` |
+| [`reasoning`](https://ai-sdk.dev/docs/reference/ai-sdk-core/ui-message#reasoninguipart)       | `reasoning-start`, `reasoning-delta`, `reasoning-end` |
+| [`tool-{name}`](https://ai-sdk.dev/docs/reference/ai-sdk-core/ui-message#tooluipart)     | `tool-input-start`, `tool-input-delta`, `tool-input-available`, `tool-input-error`, `tool-output-available`, `tool-output-error` |
+| [`data-{name}`](https://ai-sdk.dev/docs/reference/ai-sdk-core/ui-message#datauipart)     | `data-{name}` |
+| [`step-start`](https://ai-sdk.dev/docs/reference/ai-sdk-core/ui-message#stepstartuipart)      | `start-step` |
+| [`file`](https://ai-sdk.dev/docs/reference/ai-sdk-core/ui-message#fileuipart)            | `file` |
+| [`source-url`](https://ai-sdk.dev/docs/reference/ai-sdk-core/ui-message#sourceurluipart)      | `source-url` |
+| [`source-document`](https://ai-sdk.dev/docs/reference/ai-sdk-core/ui-message#sourcedocumentuipart) | `source-document` |
 
-## Step Buffering Behavior
+Controls chunks are always passed through regardless of filter settings:
 
-The filter automatically handles step boundaries, that maneas a `start-step` is only emitted if the actual content is not filtered:
+- `start`: Stream start marker
+- `finish`: Stream finish marker
+- `abort`: Stream abort marker
+- `message-metadata`: Message metadata updates
+- `error`: Error messages
+
+### Start-Step Filtering
+
+The filter automatically handles step boundaries, that means a [`start-step`](https://ai-sdk.dev/docs/reference/ai-sdk-core/ui-message#stepstartuipart) is only emitted if the actual content is not filtered:
 
 1. `start-step` is buffered until the first content chunk is encountered
 2. If the first content chunk passes the filter, `start-step` is included
 3. If the first content chunk is filtered out, `start-step` is also filtered out
 4. `finish-step` is only included if the corresponding `start-step` was included
 
-Example: 
-
-Input stream: `['start-step', 'text-start', 'text-delta', 'text-end', 'finish-step']`
-
-With filter: `{ includeParts: ['text'] }`
-Output stream: `['start-step', 'text-start', 'text-delta', 'text-end', 'finish-step']`
-
-With filter: `{ excludeParts: ['text'] }`
-Output stream: `[]`
-
-These chunk types are always passed through regardless of filter settings:
-
-- `start` - Stream start marker
-- `finish` - Stream finish marker
-- `abort` - Stream abort marker
-- `message-metadata` - Message metadata updates
-- `error` - Error messages
-
 
 ## Type Safety
 
-The `toUIMessageStream()` from `streamText()` retruns a generic stream `ReadableStream<UIMessageChunk>` which means that the original `UIMessage` cannot be inferred automatically. To enable autocomplete and type-safety for filtering parts by type, we need to pass our own `UIMessage` as generic param to `filterUIMessageStream()`:
+The [`toUIMessageStream()`](https://ai-sdk.dev/docs/reference/ai-sdk-core/stream-text#to-ui-message-stream) from [`streamText()`](https://ai-sdk.dev/docs/reference/ai-sdk-core/stream-text) returns a generic stream `ReadableStream<UIMessageChunk>` which means that the original `UIMessage` cannot be inferred automatically. To enable autocomplete and type-safety for filtering parts by type, we need to pass our own [`UIMessage`](https://ai-sdk.dev/docs/reference/ai-sdk-core/ui-message#creating-your-own-uimessage-type) as generic param to `filterUIMessageStream()`:
 
 ```typescript
 type MyMessage = UIMessage<MyMetadata, MyData, MyTools>;
@@ -149,6 +142,8 @@ const stream = filterUIMessageStream<MyMessage>(
   }
 );
 ```
+
+See [UIMessage](https://ai-sdk.dev/docs/reference/ai-sdk-core/ui-message) in the AI SDK docs to create your own `UIMessage` type.
 
 ## API Reference
 

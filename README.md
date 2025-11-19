@@ -2,7 +2,7 @@
 
 # ai-filter-stream
 
-<p align="center">AI SDK: Filter UI messages streamed to the client</p>
+<p align="center">AI SDK: Filter UI messages streaming to the client</p>
 <p align="center">
   <a href="https://www.npmjs.com/package/ai-filter-stream" alt="ai-filter-stream"><img src="https://img.shields.io/npm/dt/ai-filter-stream?label=ai-filter-stream"></a> <a href="https://github.com/zirkelc/ai-filter-stream/actions/workflows/ci.yml" alt="CI"><img src="https://img.shields.io/github/actions/workflow/status/zirkelc/ai-filter-stream/ci.yml?branch=main"></a>
 </p>
@@ -13,8 +13,8 @@ This library allows you filter UI message chunks returned from [`streamText()`](
 
 ### Why?
 
-The AI SDK UI message stream created by [`toUIMessageStream()`](https://ai-sdk.dev/docs/reference/ai-sdk-core/stream-text#to-ui-message-stream) streams all parts (text, tools, data, etc.) to the client. 
-Tool calls, like database queries often contain large amounts of data or sensitive information that should not be visible on the client. 
+The AI SDK UI message stream created by [`toUIMessageStream()`](https://ai-sdk.dev/docs/reference/ai-sdk-core/stream-text#to-ui-message-stream) by default streams all parts (text, tools, data, etc.) to the client. 
+However, tool calls like database queries often contain large amounts of data or sensitive information that should not be visible on the client. 
 This library provides a type-safe filter to apply selective streaming of certain message parts.
 
 ### Installation
@@ -95,6 +95,15 @@ const stream = filterUIMessageStream<MyMessage>(result.toUIMessageStream(), {
 });
 ```
 
+#### Client-Side Usage
+
+The filtered stream has the same type as the original UI message stream, you can consume it with [`useChat()`](https://ai-sdk.dev/docs/reference/ai-sdk-ui/use-chat) or [`readUIMessageStream()`](https://ai-sdk.dev/docs/reference/ai-sdk-ui/read-ui-message-stream). However, since the message parts are different on the client side vs. the server side, you may need to reconcile the message parts on the server when you receive a message from the client.
+
+For example, the `useChat()` hook by default sends all messages to the server so that you don't need to persist the messages to a database. The state (messages) lives exclusively on the client. That means when you stream the filtered messages to the client, and the client sends the messages including the new message back to the server, the filtered parts will not be available.
+
+If you already save your messages to a database, you typically configure the `useChat()` hook to [only send the last message](https://ai-sdk.dev/docs/ai-sdk-ui/chatbot-message-persistence#sending-only-the-last-message) to the server. 
+In this case, you would read the existing messages from the database and only add the new message from the client. That means the model will have access to all message parts, including the filtered parts not available on the client.
+
 ## Part Type Mapping
 
 The filter operates on [UIMessagePart](https://ai-sdk.dev/docs/reference/ai-sdk-core/ui-message#uimessagepart-types) part types, which are derived from [UIMessageChunk](https://github.com/vercel/ai/blob/main/packages/ai/src/ui-message-stream/ui-message-chunks.ts) chunk types:
@@ -110,7 +119,7 @@ The filter operates on [UIMessagePart](https://ai-sdk.dev/docs/reference/ai-sdk-
 | [`source-url`](https://ai-sdk.dev/docs/reference/ai-sdk-core/ui-message#sourceurluipart)      | `source-url` |
 | [`source-document`](https://ai-sdk.dev/docs/reference/ai-sdk-core/ui-message#sourcedocumentuipart) | `source-document` |
 
-Controls chunks are always passed through regardless of filter settings:
+[Controls chunks](https://github.com/vercel/ai/blob/main/packages/ai/src/ui-message-stream/ui-message-chunks.ts#L278-L293) are always passed through regardless of filter settings:
 
 - `start`: Stream start marker
 - `finish`: Stream finish marker
@@ -130,7 +139,9 @@ The filter automatically handles step boundaries, that means a [`start-step`](ht
 
 ## Type Safety
 
-The [`toUIMessageStream()`](https://ai-sdk.dev/docs/reference/ai-sdk-core/stream-text#to-ui-message-stream) from [`streamText()`](https://ai-sdk.dev/docs/reference/ai-sdk-core/stream-text) returns a generic stream `ReadableStream<UIMessageChunk>` which means that the original `UIMessage` cannot be inferred automatically. To enable autocomplete and type-safety for filtering parts by type, we need to pass our own [`UIMessage`](https://ai-sdk.dev/docs/reference/ai-sdk-core/ui-message#creating-your-own-uimessage-type) as generic param to `filterUIMessageStream()`:
+The [`toUIMessageStream()`](https://ai-sdk.dev/docs/reference/ai-sdk-core/stream-text#to-ui-message-stream) from [`streamText()`](https://ai-sdk.dev/docs/reference/ai-sdk-core/stream-text) returns a generic stream `ReadableStream<UIMessageChunk>` which means that the original `UIMessage` cannot be inferred automatically. 
+
+To enable autocomplete and type-safety for filtering parts by type, we need to pass our own [`UIMessage`](https://ai-sdk.dev/docs/reference/ai-sdk-core/ui-message#creating-your-own-uimessage-type) as generic param to `filterUIMessageStream()`:
 
 ```typescript
 type MyMessage = UIMessage<MyMetadata, MyData, MyTools>;

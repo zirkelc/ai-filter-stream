@@ -77,7 +77,7 @@ const stream = filterUIMessageStream<MyMessage>(result.toUIMessageStream(), {
 
 // Exclusive filtering: exclude only `tool-weather` parts
 const stream = filterUIMessageStream<MyMessage>(result.toUIMessageStream(), {
-  excludeParts: ['reasoning', 'tool-calculator'], // Autocomplete works here!
+  excludeParts: ['tool-weather'], // Autocomplete works here!
 });
 
 // Dynamic filtering: apply filter function for each chunk

@@ -1,7 +1,7 @@
 {
-  "name": "ai-filter-stream",
+  "name": "ai-stream-utils",
   "version": "0.0.0",
-  "description": "AI SDK: Filter UI messages streamed to the client",
+  "description": "AI SDK: Filter and transform UI messages streaming to the client",
   "packageManager": "pnpm@^10.0.0",
   "main": "./dist/index.mjs",
   "module": "./dist/index.mjs",
@@ -43,6 +43,7 @@
     "ai": "5.x"
   },
   "devDependencies": {
+    "@ai-sdk/openai": "^2.0.76",
     "@ai-sdk/provider-utils": "^3.0.17",
     "@arethetypeswrong/cli": "^0.18.2",
     "@biomejs/biome": "^2.3.6",
@@ -59,7 +60,5 @@
     "vitest": "^4.0.10",
     "zod": "^4.1.12"
   },
-  "dependencies": {
-    "@ai-sdk/openai": "^2.0.76"
-  }
+  "dependencies": {}
 }

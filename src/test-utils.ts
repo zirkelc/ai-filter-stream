@@ -1,5 +1,4 @@
 import {
-  dynamicTool,
   type InferUIMessageChunk,
   type InferUITools,
   tool,
@@ -161,16 +160,6 @@ export const SOURCE_CHUNKS: MyUIMessageChunk[] = [
   { type: 'finish-step' },
 ];
 
-export const FILE_CHUNKS: MyUIMessageChunk[] = [
-  { type: 'start-step' },
-  {
-    type: 'file',
-    url: 'https://example.com/file.pdf',
-    mediaType: 'application/pdf',
-  },
-  { type: 'finish-step' },
-];
-
 export const DATA_CHUNKS: MyUIMessageChunk[] = [
   { type: 'start-step' },
   {
@@ -180,7 +169,7 @@ export const DATA_CHUNKS: MyUIMessageChunk[] = [
   { type: 'finish-step' },
 ];
 
-export const FILE_CHUNK: MyUIMessageChunk[] = [
+export const FILE_CHUNKS: MyUIMessageChunk[] = [
   { type: 'start-step' },
   {
     type: 'file',

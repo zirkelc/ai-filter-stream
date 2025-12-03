@@ -9,11 +9,7 @@
 
 </div>
 
-This library provides composable stream transformation utilities for UI message streams created by [`streamText()`](https://ai-sdk.dev/docs/reference/ai-sdk-core/stream-text) in the AI SDK. It offers three levels of granularity for transforming streams:
-
-- **Chunk-level**: Transform or filter individual chunks as they arrive
-- **Part-level**: Buffer and transform complete message parts  
-- **Filter**: Convenient filtering by part type
+This library provides composable stream transformation and filter utilities for UI message streams created by [`streamText()`](https://ai-sdk.dev/docs/reference/ai-sdk-core/stream-text) in the AI SDK.
 
 ### Why?
 
@@ -70,14 +66,14 @@ const result = streamText({
 });
 
 // Filter out reasoning chunks
-const stream = mapUIMessageStream<MyUIMessage>(
-  result.toUIMessageStream(),
+const stream = mapUIMessageStream(
+  result.toUIMessageStream<MyUIMessage>(),
   ({ chunk, part }) => part.type === 'reasoning' ? null : chunk
 );
 
 // Transform text chunks to uppercase
-const stream = mapUIMessageStream<MyUIMessage>(
-  result.toUIMessageStream(),
+const stream = mapUIMessageStream(
+  result.toUIMessageStream<MyUIMessage>(),
   ({ chunk, part }) => {
     if (chunk.type === 'text-delta') {
       return { ...chunk, delta: chunk.delta.toUpperCase() };
@@ -87,8 +83,8 @@ const stream = mapUIMessageStream<MyUIMessage>(
 );
 
 // Access chunk history and index
-const stream = mapUIMessageStream<MyUIMessage>(
-  result.toUIMessageStream(),
+const stream = mapUIMessageStream(
+  result.toUIMessageStream<MyUIMessage>(),
   ({ chunk }, { index, chunks }) => {
     console.log(`Chunk ${index}, total seen: ${chunks.length}`);
     return chunk;
@@ -106,14 +102,14 @@ When a predicate is provided (e.g., `partTypeIs('text')`), only matching parts a
 import { flatMapUIMessageStream, partTypeIs } from 'ai-stream-utils';
 
 // Filter out reasoning parts
-const stream = flatMapUIMessageStream<MyUIMessage>(
-  result.toUIMessageStream(),
+const stream = flatMapUIMessageStream(
+  result.toUIMessageStream<MyUIMessage>(),
   ({ part }) => part.type === 'reasoning' ? null : part
 );
 
 // Transform text content
-const stream = flatMapUIMessageStream<MyUIMessage>(
-  result.toUIMessageStream(),
+const stream = flatMapUIMessageStream(
+  result.toUIMessageStream<MyUIMessage>(),
   ({ part }) => {
     if (part.type === 'text') {
       return { ...part, text: part.text.toUpperCase() };
@@ -124,21 +120,21 @@ const stream = flatMapUIMessageStream<MyUIMessage>(
 
 // Buffer only specific parts, pass through others immediately
 const stream = flatMapUIMessageStream(
-  result.toUIMessageStream(),
+  result.toUIMessageStream<MyUIMessage>(),
   partTypeIs('text'),
   ({ part }) => ({ ...part, text: part.text.toUpperCase() })
 );
 
 // Buffer multiple part types
 const stream = flatMapUIMessageStream(
-  result.toUIMessageStream(),
+  result.toUIMessageStream<MyUIMessage>(),
   partTypeIs(['text', 'reasoning']),
   ({ part }) => part // part is typed as TextUIPart | ReasoningUIPart
 );
 
 // Access part history
-const stream = flatMapUIMessageStream<MyUIMessage>(
-  result.toUIMessageStream(),
+const stream = flatMapUIMessageStream(
+  result.toUIMessageStream<MyUIMessage>(),
   ({ part }, { index, parts }) => {
     console.log(`Part ${index}, previous parts:`, parts.slice(0, -1));
     return part;
@@ -154,20 +150,20 @@ Filter individual chunks as they stream through. This is a convenience wrapper a
 import { filterUIMessageStream, includeParts, excludeParts } from 'ai-stream-utils';
 
 // Include only specific parts
-const stream = filterUIMessageStream<MyUIMessage>(
-  result.toUIMessageStream(),
+const stream = filterUIMessageStream(
+  result.toUIMessageStream<MyUIMessage>(),
   includeParts(['text', 'tool-weather'])
 );
 
 // Exclude specific parts
-const stream = filterUIMessageStream<MyUIMessage>(
-  result.toUIMessageStream(),
+const stream = filterUIMessageStream(
+  result.toUIMessageStream<MyUIMessage>(),
   excludeParts(['reasoning', 'tool-database'])
 );
 
 // Custom filter function
-const stream = filterUIMessageStream<MyUIMessage>(
-  result.toUIMessageStream(),
+const stream = filterUIMessageStream(
+  result.toUIMessageStream<MyUIMessage>(),
   ({ part }, { index }) => {
     // Include text parts
     if (part.type === 'text') return true;
@@ -198,14 +194,14 @@ type MyUIMessage = UIMessage<
 >;
 
 // Type-safe filtering with autocomplete
-const stream = filterUIMessageStream<MyUIMessage>(
-  result.toUIMessageStream(),
+const stream = filterUIMessageStream(
+  result.toUIMessageStream<MyUIMessage>(),
   includeParts(['text', 'tool-weather']) // Autocomplete works!
 );
 
 // Type-safe chunk mapping
-const stream = mapUIMessageStream<MyUIMessage>(
-  result.toUIMessageStream(),
+const stream = mapUIMessageStream(
+  result.toUIMessageStream<MyUIMessage>(),
   ({ chunk, part }) => {
     // part.type is typed based on MyUIMessage
     return chunk;
@@ -293,7 +289,7 @@ function flatMapUIMessageStream<UI_MESSAGE extends UIMessage>(
 // With predicate - buffer only matching parts, pass through others
 function flatMapUIMessageStream<UI_MESSAGE extends UIMessage, PART extends InferUIMessagePart<UI_MESSAGE>>(
   stream: ReadableStream<UIMessageChunk>,
-  predicate: PartTypePredicate<UI_MESSAGE, PART>,
+  predicate: FlatMapUIMessageStreamPredicate<UI_MESSAGE, PART>,
   flatMapFn: FlatMapUIMessageStreamFn<UI_MESSAGE, PART>,
 ): AsyncIterableStream<InferUIMessageChunk<UI_MESSAGE>>
 

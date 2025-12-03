@@ -17,6 +17,7 @@ import {
   FILE_CHUNKS,
   FINISH_CHUNK,
   MESSAGE_METADATA_CHUNK,
+  type MyUIMessage,
   type MyUIMessagePart,
   REASONING_CHUNKS,
   SOURCE_CHUNKS,
@@ -34,7 +35,7 @@ describe('filterUIMessageStream', () => {
       FINISH_CHUNK,
     ]);
 
-    const filteredStream = filterUIMessageStream(
+    const filteredStream = filterUIMessageStream<MyUIMessage>(
       stream,
       includeParts(['text']),
     );

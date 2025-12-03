@@ -90,7 +90,7 @@ export type MapUIMessageStreamFn<UI_MESSAGE extends UIMessage> = (
  * ```
  */
 export function mapUIMessageStream<UI_MESSAGE extends UIMessage>(
-  stream: ReadableStream<UIMessageChunk>,
+  stream: ReadableStream<InferUIMessageChunk<UI_MESSAGE>>,
   mapFn: MapUIMessageStreamFn<UI_MESSAGE>,
 ): AsyncIterableStream<InferUIMessageChunk<UI_MESSAGE>> {
   // State for the transform stream

@@ -10,7 +10,7 @@ import {
   partTypeIs,
 } from './flat-map-ui-message-stream.js';
 import {
-  FILE_CHUNK,
+  FILE_CHUNKS,
   FINISH_CHUNK,
   type MyUIMessage,
   type MyUIMessageChunk,
@@ -103,7 +103,7 @@ describe('flatMapUIMessageStream', () => {
   it('should handle single-chunk parts (file)', async () => {
     const stream = convertArrayToReadableStream([
       START_CHUNK,
-      ...FILE_CHUNK,
+      ...FILE_CHUNKS,
       FINISH_CHUNK,
     ]);
 
@@ -274,7 +274,7 @@ describe('flatMapUIMessageStream', () => {
         START_CHUNK,
         ...TEXT_CHUNKS,
         ...REASONING_CHUNKS,
-        ...FILE_CHUNK,
+        ...FILE_CHUNKS,
         FINISH_CHUNK,
       ]);
 

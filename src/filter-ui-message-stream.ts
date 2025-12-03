@@ -96,7 +96,7 @@ export function excludeParts<UI_MESSAGE extends UIMessage>(
  * ```
  */
 export function filterUIMessageStream<UI_MESSAGE extends UIMessage>(
-  stream: ReadableStream<UIMessageChunk>,
+  stream: ReadableStream<InferUIMessageChunk<UI_MESSAGE>>,
   predicate: FilterUIMessageStreamPredicate<UI_MESSAGE>,
 ): AsyncIterableStream<InferUIMessageChunk<UI_MESSAGE>> {
   return mapUIMessageStream(stream, (input, context) => {

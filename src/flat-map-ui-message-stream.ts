@@ -144,12 +144,12 @@ export function flatMapUIMessageStream<
   UI_MESSAGE extends UIMessage,
   PART extends InferUIMessagePart<UI_MESSAGE>,
 >(
-  stream: ReadableStream<UIMessageChunk>,
+  stream: ReadableStream<InferUIMessageChunk<UI_MESSAGE>>,
   predicate: FlatMapUIMessageStreamPredicate<UI_MESSAGE, PART>,
   flatMapFn: FlatMapUIMessageStreamFn<UI_MESSAGE, PART>,
 ): AsyncIterableStream<InferUIMessageChunk<UI_MESSAGE>>;
 export function flatMapUIMessageStream<UI_MESSAGE extends UIMessage>(
-  stream: ReadableStream<UIMessageChunk>,
+  stream: ReadableStream<InferUIMessageChunk<UI_MESSAGE>>,
   flatMapFn: FlatMapUIMessageStreamFn<UI_MESSAGE>,
 ): AsyncIterableStream<InferUIMessageChunk<UI_MESSAGE>>;
 
@@ -160,11 +160,11 @@ export function flatMapUIMessageStream<
 >(
   ...args:
     | [
-        ReadableStream<UIMessageChunk>,
+        ReadableStream<InferUIMessageChunk<UI_MESSAGE>>,
         FlatMapUIMessageStreamFn<UI_MESSAGE, PART>,
       ]
     | [
-        ReadableStream<UIMessageChunk>,
+        ReadableStream<InferUIMessageChunk<UI_MESSAGE>>,
         FlatMapUIMessageStreamPredicate<UI_MESSAGE, PART>,
         FlatMapUIMessageStreamFn<UI_MESSAGE, PART>,
       ]
@@ -334,7 +334,6 @@ export function flatMapUIMessageStream<
     if (currentPartChunks.length === 0) return;
 
     const chunks = currentPartChunks;
-    const partType = currentPartType as InferUIMessagePartType<UI_MESSAGE>;
     currentPartChunks = [];
     currentPartType = undefined;
     isBufferingCurrentPart = false;
@@ -342,7 +341,6 @@ export function flatMapUIMessageStream<
     // Reconstruct the part from chunks
     const part = reconstructPartFromChunks(
       chunks,
-      partType,
     ) as InferUIMessagePart<UI_MESSAGE>;
 
     // Create the input object and add to history
@@ -368,7 +366,6 @@ export function flatMapUIMessageStream<
       // Part was transformed - serialize it to chunks
       const newChunks = serializePartToChunks(
         result,
-        partType,
         chunks,
       ) as InferUIMessageChunk<UI_MESSAGE>[];
       emitChunks(controller, newChunks, startStep);
@@ -381,10 +378,7 @@ export function flatMapUIMessageStream<
 /**
  * Reconstructs a UIMessagePart from its chunks.
  */
-function reconstructPartFromChunks(
-  chunks: UIMessageChunk[],
-  _partType: string,
-): unknown {
+function reconstructPartFromChunks(chunks: UIMessageChunk[]): unknown {
   if (chunks.length === 0) return null;
 
   const firstChunk = chunks[0];
@@ -560,7 +554,6 @@ function reconstructPartFromChunks(
  */
 function serializePartToChunks(
   part: unknown,
-  _partType: string,
   originalChunks: UIMessageChunk[],
 ): UIMessageChunk[] {
   const typedPart = part as Record<string, unknown>;

@@ -6,7 +6,6 @@ import type { UIMessageChunk } from 'ai';
 import { describe, expect, it } from 'vitest';
 import {
   flatMapUIMessageStream,
-  type PartFlatMapInput,
   partTypeIs,
 } from './flat-map-ui-message-stream.js';
 import {
@@ -190,7 +189,7 @@ describe('flatMapUIMessageStream', () => {
       FINISH_CHUNK,
     ]);
 
-    let lastPartsSnapshot: PartFlatMapInput<MyUIMessage>[] = [];
+    let lastPartsSnapshot: MyUIMessage['parts'] = [];
     const mappedStream = flatMapUIMessageStream<MyUIMessage>(
       stream,
       ({ part }, { parts }) => {
@@ -203,8 +202,8 @@ describe('flatMapUIMessageStream', () => {
 
     // Should have all parts at the end
     expect(lastPartsSnapshot.length).toBe(2);
-    expect(lastPartsSnapshot[0]?.part.type).toBe('text');
-    expect(lastPartsSnapshot[1]?.part.type).toBe('reasoning');
+    expect(lastPartsSnapshot[0]?.type).toBe('text');
+    expect(lastPartsSnapshot[1]?.type).toBe('reasoning');
   });
 
   describe('predicate', () => {

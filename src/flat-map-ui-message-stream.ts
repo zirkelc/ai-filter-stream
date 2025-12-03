@@ -16,15 +16,15 @@ import {
   type ToolCallState,
 } from './stream-utils.js';
 import type {
+  InferPartialUIMessagePart,
   InferUIMessagePart,
   InferUIMessagePartType,
-  PartialPart,
 } from './types.js';
 
 /**
  * Input object provided to the part flatMap function.
  */
-export type PartFlatMapInput<
+export type FlatMapInput<
   UI_MESSAGE extends UIMessage,
   PART extends InferUIMessagePart<UI_MESSAGE> = InferUIMessagePart<UI_MESSAGE>,
 > = {
@@ -35,11 +35,11 @@ export type PartFlatMapInput<
 /**
  * Context provided to the part flatMap function.
  */
-export type PartFlatMapContext<UI_MESSAGE extends UIMessage> = {
+export type FlatMapContext<UI_MESSAGE extends UIMessage> = {
   /** The index of the current part in the stream (0-based) */
   index: number;
   /** All parts seen so far (including the current one) */
-  parts: PartFlatMapInput<UI_MESSAGE>[];
+  parts: InferUIMessagePart<UI_MESSAGE>[];
 };
 
 /**
@@ -52,8 +52,8 @@ export type FlatMapUIMessageStreamFn<
   UI_MESSAGE extends UIMessage,
   PART extends InferUIMessagePart<UI_MESSAGE> = InferUIMessagePart<UI_MESSAGE>,
 > = (
-  input: PartFlatMapInput<UI_MESSAGE, PART>,
-  context: PartFlatMapContext<UI_MESSAGE>,
+  input: FlatMapInput<UI_MESSAGE, PART>,
+  context: FlatMapContext<UI_MESSAGE>,
 ) => PART | null;
 
 /**
@@ -65,7 +65,7 @@ export type FlatMapUIMessageStreamPredicate<
   UI_MESSAGE extends UIMessage,
   // Part is needed for type narrowing in the predicate
   PART extends InferUIMessagePart<UI_MESSAGE> = InferUIMessagePart<UI_MESSAGE>,
-> = (part: PartialPart<UI_MESSAGE>) => boolean;
+> = (part: InferPartialUIMessagePart<UI_MESSAGE>) => boolean;
 
 /**
  * Creates a predicate that matches parts by their type.
@@ -91,7 +91,7 @@ export function partTypeIs<
 > {
   const partTypes = Array.isArray(type) ? type : [type];
 
-  return (part: PartialPart<UI_MESSAGE>): boolean =>
+  return (part: InferPartialUIMessagePart<UI_MESSAGE>): boolean =>
     partTypes.includes(part.type as PART_TYPE);
 }
 
@@ -185,7 +185,7 @@ export function flatMapUIMessageStream<
   let isBufferingCurrentPart = false;
 
   // Track all parts and current index
-  const allParts: PartFlatMapInput<UI_MESSAGE>[] = [];
+  const allParts: InferUIMessagePart<UI_MESSAGE>[] = [];
   let currentIndex = 0;
 
   const transformStream = new TransformStream<
@@ -245,7 +245,7 @@ export function flatMapUIMessageStream<
           chunk,
           partType,
           toolCallStates,
-        ) as PartialPart<UI_MESSAGE>;
+        ) as InferPartialUIMessagePart<UI_MESSAGE>;
 
         // Check predicate to decide: buffer or stream?
         const shouldBuffer = !predicate || predicate(partialPart);
@@ -341,9 +341,10 @@ export function flatMapUIMessageStream<
       chunks,
     ) as InferUIMessagePart<UI_MESSAGE>;
 
-    // Create the input object and add to history
-    const input: PartFlatMapInput<UI_MESSAGE> = { part };
-    allParts.push(input);
+    // Create the input object for the flatMap function
+    const input: FlatMapInput<UI_MESSAGE> = { part };
+    // Add just the part to history
+    allParts.push(part);
     const index = currentIndex++;
 
     // Apply the flatMap function (cast needed for type safety with predicate overload)

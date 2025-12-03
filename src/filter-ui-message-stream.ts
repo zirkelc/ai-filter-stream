@@ -5,8 +5,8 @@ import type {
   UIMessageChunk,
 } from 'ai';
 import {
-  type ChunkMapContext,
-  type ChunkMapInput,
+  type MapContext,
+  type MapInput,
   mapUIMessageStream,
 } from './map-ui-message-stream.js';
 import type { InferUIMessagePartType } from './types.js';
@@ -16,8 +16,8 @@ import type { InferUIMessagePartType } from './types.js';
  * Return true to include the chunk, false to filter it out.
  */
 export type FilterUIMessageStreamPredicate<UI_MESSAGE extends UIMessage> = (
-  input: ChunkMapInput<UI_MESSAGE>,
-  context: ChunkMapContext<UI_MESSAGE>,
+  input: MapInput<UI_MESSAGE>,
+  context: MapContext<UI_MESSAGE>,
 ) => boolean;
 
 /**

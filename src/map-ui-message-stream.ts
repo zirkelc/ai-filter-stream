@@ -8,25 +8,25 @@ import {
   resolveToolPartType,
   type ToolCallState,
 } from './stream-utils.js';
-import type { PartialPart } from './types.js';
+import type { InferPartialUIMessagePart } from './types.js';
 
 /**
  * Input object provided to the chunk map function.
  */
-export type ChunkMapInput<UI_MESSAGE extends UIMessage> = {
+export type MapInput<UI_MESSAGE extends UIMessage> = {
   /** The current chunk */
   chunk: InferUIMessageChunk<UI_MESSAGE>;
   /**
    * A partial representation of the part this chunk belongs to.
    * Use `part.type` to determine the part type.
    */
-  part: PartialPart<UI_MESSAGE>;
+  part: InferPartialUIMessagePart<UI_MESSAGE>;
 };
 
 /**
  * Context provided to the chunk map function (similar to Array.map callback).
  */
-export type ChunkMapContext<UI_MESSAGE extends UIMessage> = {
+export type MapContext<UI_MESSAGE extends UIMessage> = {
   /** The index of the current chunk in the stream (0-based) */
   index: number;
   /** All chunks seen so far (including the current one) */
@@ -39,8 +39,8 @@ export type ChunkMapContext<UI_MESSAGE extends UIMessage> = {
  * Return the chunk (possibly transformed) to include it, or null to filter it out.
  */
 export type MapUIMessageStreamFn<UI_MESSAGE extends UIMessage> = (
-  input: ChunkMapInput<UI_MESSAGE>,
-  context: ChunkMapContext<UI_MESSAGE>,
+  input: MapInput<UI_MESSAGE>,
+  context: MapContext<UI_MESSAGE>,
 ) => InferUIMessageChunk<UI_MESSAGE> | null;
 
 /**
@@ -152,7 +152,7 @@ export function mapUIMessageStream<UI_MESSAGE extends UIMessage>(
 
       // Apply the map function
       const result = mapFn(
-        { chunk, part: part as PartialPart<UI_MESSAGE> },
+        { chunk, part: part as InferPartialUIMessagePart<UI_MESSAGE> },
         { index, chunks: allChunks },
       );
 

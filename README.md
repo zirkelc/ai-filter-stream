@@ -271,16 +271,16 @@ function mapUIMessageStream<UI_MESSAGE extends UIMessage>(
 ): AsyncIterableStream<InferUIMessageChunk<UI_MESSAGE>>
 
 type MapUIMessageStreamFn<UI_MESSAGE extends UIMessage> = (
-  input: ChunkMapInput<UI_MESSAGE>,
-  context: ChunkMapContext<UI_MESSAGE>,
+  input: MapInput<UI_MESSAGE>,
+  context: MapContext<UI_MESSAGE>,
 ) => InferUIMessageChunk<UI_MESSAGE> | null;
 
-type ChunkMapInput<UI_MESSAGE extends UIMessage> = {
+type MapInput<UI_MESSAGE extends UIMessage> = {
   chunk: InferUIMessageChunk<UI_MESSAGE>;
-  part: PartialPart<UI_MESSAGE>;
+  part: InferPartialUIMessagePart<UI_MESSAGE>;
 };
 
-type ChunkMapContext<UI_MESSAGE extends UIMessage> = {
+type MapContext<UI_MESSAGE extends UIMessage> = {
   index: number;
   chunks: InferUIMessageChunk<UI_MESSAGE>[];
 };
@@ -303,17 +303,17 @@ function flatMapUIMessageStream<UI_MESSAGE extends UIMessage, PART extends Infer
 ): AsyncIterableStream<InferUIMessageChunk<UI_MESSAGE>>
 
 type FlatMapUIMessageStreamFn<UI_MESSAGE extends UIMessage, PART = InferUIMessagePart<UI_MESSAGE>> = (
-  input: PartFlatMapInput<UI_MESSAGE, PART>,
-  context: PartFlatMapContext<UI_MESSAGE>,
+  input: FlatMapInput<UI_MESSAGE, PART>,
+  context: FlatMapContext<UI_MESSAGE>,
 ) => PART | null;
 
-type PartFlatMapInput<UI_MESSAGE extends UIMessage, PART = InferUIMessagePart<UI_MESSAGE>> = {
+type FlatMapInput<UI_MESSAGE extends UIMessage, PART = InferUIMessagePart<UI_MESSAGE>> = {
   part: PART;
 };
 
-type PartFlatMapContext<UI_MESSAGE extends UIMessage> = {
+type FlatMapContext<UI_MESSAGE extends UIMessage> = {
   index: number;
-  parts: PartFlatMapInput<UI_MESSAGE>[];
+  parts: InferUIMessagePart<UI_MESSAGE>[];
 };
 ```
 
@@ -325,7 +325,7 @@ function partTypeIs<UI_MESSAGE extends UIMessage, T extends InferUIMessagePartTy
 ): FlatMapUIMessageStreamPredicate<UI_MESSAGE, Extract<InferUIMessagePart<UI_MESSAGE>, { type: T }>>
 
 type FlatMapUIMessageStreamPredicate<UI_MESSAGE extends UIMessage, PART extends InferUIMessagePart<UI_MESSAGE>> = 
-  (part: PartialPart<UI_MESSAGE>) => boolean;
+  (part: InferPartialUIMessagePart<UI_MESSAGE>) => boolean;
 ```
 
 ### `filterUIMessageStream`
@@ -337,8 +337,8 @@ function filterUIMessageStream<UI_MESSAGE extends UIMessage>(
 ): AsyncIterableStream<InferUIMessageChunk<UI_MESSAGE>>
 
 type FilterUIMessageStreamPredicate<UI_MESSAGE extends UIMessage> = (
-  input: ChunkMapInput<UI_MESSAGE>,
-  context: ChunkMapContext<UI_MESSAGE>,
+  input: MapInput<UI_MESSAGE>,
+  context: MapContext<UI_MESSAGE>,
 ) => boolean;
 ```
 

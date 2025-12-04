@@ -1,5 +1,5 @@
+import { convertAsyncIteratorToReadableStream } from '@ai-sdk/provider-utils';
 import type { AsyncIterableStream, InferUIMessageChunk, UIMessage } from 'ai';
-import { readUIMessageStream } from 'ai';
 import { createAsyncIterableStream } from './create-async-iterable-stream.js';
 import {
   isMetaChunk,
@@ -7,6 +7,7 @@ import {
   isStepStartChunk,
 } from './stream-utils.js';
 import type { InferPartialUIMessagePart } from './types.js';
+import { createUIMessageStreamReader } from './ui-message-stream-reader.js';
 
 /**
  * Input object provided to the chunk map function.
@@ -44,8 +45,10 @@ export type MapUIMessageStreamFn<UI_MESSAGE extends UIMessage> = (
 /**
  * Maps/filters a UIMessageStream at the chunk level using readUIMessageStream.
  *
- * This implementation uses readUIMessageStream from AI SDK for building partial parts,
- * eliminating manual tool state tracking.
+ * This implementation uses:
+ * - readUIMessageStream from AI SDK for building partial parts
+ * - An async generator for cleaner control flow and natural backpressure
+ * - convertAsyncIteratorToReadableStream for stream conversion
  *
  * This function processes each chunk as it arrives and allows you to:
  * - Transform chunks by returning a modified chunk
@@ -89,32 +92,11 @@ export function mapUIMessageStream<UI_MESSAGE extends UIMessage>(
   stream: ReadableStream<InferUIMessageChunk<UI_MESSAGE>>,
   mapFn: MapUIMessageStreamFn<UI_MESSAGE>,
 ): AsyncIterableStream<InferUIMessageChunk<UI_MESSAGE>> {
-  const reader = stream.getReader();
-
-  // Stream for readUIMessageStream - it will assemble parts
-  let uiStreamController: ReadableStreamDefaultController<
-    InferUIMessageChunk<UI_MESSAGE>
-  >;
-  const uiStream = new ReadableStream<InferUIMessageChunk<UI_MESSAGE>>({
-    start(controller) {
-      uiStreamController = controller;
-    },
-  });
-
-  // Start readUIMessageStream
-  const uiMessages = readUIMessageStream<UI_MESSAGE>({ stream: uiStream });
-  const uiMessageIterator = uiMessages[Symbol.asyncIterator]();
-
-  // Output stream
-  const outputTransform = new TransformStream<
-    InferUIMessageChunk<UI_MESSAGE>,
-    InferUIMessageChunk<UI_MESSAGE>
-  >();
-  const outputWriter = outputTransform.writable.getWriter();
+  const streamReader = createUIMessageStreamReader<UI_MESSAGE>(stream);
 
   // State for step boundary handling
   let bufferedStartStep: InferUIMessageChunk<UI_MESSAGE> | undefined;
-  let stepStartEnqueued = false;
+  let stepStartEmitted = false;
   let stepHasContent = false;
 
   // Track all chunks and current index for context
@@ -122,27 +104,31 @@ export function mapUIMessageStream<UI_MESSAGE extends UIMessage>(
   let currentIndex = 0;
 
   /**
-   * Emit a chunk to output, handling step boundary buffering.
+   * Generator that yields chunks with step boundary handling.
    */
-  async function emitChunk(chunk: InferUIMessageChunk<UI_MESSAGE>) {
+  async function* emitChunks(
+    chunk: InferUIMessageChunk<UI_MESSAGE>,
+  ): AsyncGenerator<InferUIMessageChunk<UI_MESSAGE>> {
     if (bufferedStartStep && !stepHasContent) {
       stepHasContent = true;
-      await outputWriter.write(bufferedStartStep);
-      stepStartEnqueued = true;
+      yield bufferedStartStep;
+      stepStartEmitted = true;
       bufferedStartStep = undefined;
     }
-    await outputWriter.write(chunk);
+    yield chunk;
   }
 
   /**
-   * Main processing loop.
+   * Main processing generator.
    */
-  async function processChunks() {
+  async function* processChunks(): AsyncGenerator<
+    InferUIMessageChunk<UI_MESSAGE>
+  > {
     try {
       while (true) {
-        const { done, value: chunk } = await reader.read();
+        const { done, value: chunk } = await streamReader.read();
         if (done) {
-          uiStreamController.close();
+          streamReader.close();
           break;
         }
 
@@ -152,45 +138,40 @@ export function mapUIMessageStream<UI_MESSAGE extends UIMessage>(
 
         // Meta chunks pass through immediately
         if (isMetaChunk(chunk)) {
-          await outputWriter.write(chunk);
-          // Feed to uiStream but don't await (may or may not emit)
-          uiStreamController.enqueue(chunk);
+          yield chunk;
+          await streamReader.enqueue(chunk);
           continue;
         }
 
-        // Step boundaries - special handling (don't trigger message emission)
+        // Step boundaries - special handling
         if (isStepStartChunk(chunk)) {
           bufferedStartStep = chunk;
           stepHasContent = false;
-          uiStreamController.enqueue(chunk);
+          await streamReader.enqueue(chunk);
           continue;
         }
 
         if (isStepEndChunk(chunk)) {
-          if (stepStartEnqueued) {
-            await outputWriter.write(chunk);
-            stepStartEnqueued = false;
+          if (stepStartEmitted) {
+            yield chunk;
+            stepStartEmitted = false;
           }
           bufferedStartStep = undefined;
-          uiStreamController.enqueue(chunk);
+          await streamReader.enqueue(chunk);
           continue;
         }
 
-        // For content chunks: feed to uiStream and get updated message
-        uiStreamController.enqueue(chunk);
-        const { done: iterDone, value: message } =
-          await uiMessageIterator.next();
+        // For content chunks: feed to stream reader and get updated message
+        const message = await streamReader.enqueue(chunk);
 
-        if (iterDone || !message) {
+        if (!message) {
           break;
         }
 
         // Get the current partial part from AI SDK (last part)
-        // Step chunks are handled earlier with continue, so the last part is always a content part
         const currentPart = message.parts[message.parts.length - 1]!;
 
         // Apply map function
-        // Cast through unknown since AI SDK part types may not exactly match InferPartialUIMessagePart
         const result = mapFn(
           {
             chunk,
@@ -199,32 +180,16 @@ export function mapUIMessageStream<UI_MESSAGE extends UIMessage>(
           { index, chunks: allChunks },
         );
 
-        // If result is null, filter out this chunk
+        // If result is not null, emit with step handling
         if (result !== null) {
-          await emitChunk(result);
+          yield* emitChunks(result);
         }
       }
-
-      // Drain any remaining messages from iterator
-      while (true) {
-        const { done } = await uiMessageIterator.next();
-        if (done) break;
-      }
-
-      // Close output stream
-      await outputWriter.close();
-    } catch (error) {
-      uiStreamController.error(error);
-      await outputWriter.abort(error);
     } finally {
-      reader.releaseLock();
-      allChunks.length = 0;
-      currentIndex = 0;
+      await streamReader.release();
     }
   }
 
-  // Start processing
-  processChunks();
-
-  return createAsyncIterableStream(outputTransform.readable);
+  const outputStream = convertAsyncIteratorToReadableStream(processChunks());
+  return createAsyncIterableStream(outputStream);
 }

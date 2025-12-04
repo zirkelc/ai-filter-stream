@@ -1,3 +1,4 @@
+import { convertAsyncIteratorToReadableStream } from '@ai-sdk/provider-utils';
 import type {
   AsyncIterableStream,
   FileUIPart,
@@ -7,14 +8,11 @@ import type {
   SourceUrlUIPart,
   TextUIPart,
   UIMessage,
-  UIMessageChunk,
 } from 'ai';
 import {
-  getToolName,
   getToolOrDynamicToolName,
   isDataUIPart,
   isToolOrDynamicToolUIPart,
-  readUIMessageStream,
 } from 'ai';
 import { createAsyncIterableStream } from './create-async-iterable-stream.js';
 import {
@@ -27,6 +25,7 @@ import type {
   InferUIMessagePart,
   InferUIMessagePartType,
 } from './types.js';
+import { createUIMessageStreamReader } from './ui-message-stream-reader.js';
 
 /**
  * Input object provided to the part flatMap function.
@@ -109,8 +108,12 @@ function isPartComplete<UI_MESSAGE extends UIMessage>(
 /**
  * FlatMaps a UIMessageStream at the part level using readUIMessageStream.
  *
- * This implementation uses readUIMessageStream for both part assembly AND
- * predicate checking. No manual tool state tracking or partial part building needed.
+ * This implementation uses:
+ * - readUIMessageStream for both part assembly AND predicate checking
+ * - An async generator for cleaner control flow and natural backpressure
+ * - convertAsyncIteratorToReadableStream for stream conversion
+ *
+ * No manual tool state tracking or partial part building needed.
  */
 export function flatMapUIMessageStream<
   UI_MESSAGE extends UIMessage,
@@ -146,29 +149,7 @@ export function flatMapUIMessageStream<
       ? [args[0], undefined, args[1]]
       : [args[0], args[1], args[2]];
 
-  // Single reader for input stream
-  const reader = inputStream.getReader();
-
-  // Stream for readUIMessageStream - it will assemble parts
-  let uiStreamController: ReadableStreamDefaultController<
-    InferUIMessageChunk<UI_MESSAGE>
-  >;
-  const uiStream = new ReadableStream<InferUIMessageChunk<UI_MESSAGE>>({
-    start(controller) {
-      uiStreamController = controller;
-    },
-  });
-
-  // Start readUIMessageStream
-  const uiMessages = readUIMessageStream<UI_MESSAGE>({ stream: uiStream });
-  const uiMessageIterator = uiMessages[Symbol.asyncIterator]();
-
-  // Output stream
-  const outputTransform = new TransformStream<
-    InferUIMessageChunk<UI_MESSAGE>,
-    InferUIMessageChunk<UI_MESSAGE>
-  >();
-  const outputWriter = outputTransform.writable.getWriter();
+  const streamReader = createUIMessageStreamReader<UI_MESSAGE>(inputStream);
 
   // State for tracking parts
   let lastPartCount = 0;
@@ -179,37 +160,30 @@ export function flatMapUIMessageStream<
 
   // State for step boundary handling
   let bufferedStartStep: InferUIMessageChunk<UI_MESSAGE> | undefined;
-  let stepStartEnqueued = false;
+  let stepStartEmitted = false;
   let stepHasContent = false;
 
   /**
-   * Emit a chunk to output, handling step boundary buffering.
+   * Generator that yields chunks with step boundary handling.
    */
-  async function emitChunk(chunk: InferUIMessageChunk<UI_MESSAGE>) {
+  async function* emitChunks(
+    chunk: InferUIMessageChunk<UI_MESSAGE>,
+  ): AsyncGenerator<InferUIMessageChunk<UI_MESSAGE>> {
     if (bufferedStartStep && !stepHasContent) {
       stepHasContent = true;
-      await outputWriter.write(bufferedStartStep);
-      stepStartEnqueued = true;
+      yield bufferedStartStep;
+      stepStartEmitted = true;
       bufferedStartStep = undefined;
     }
-    await outputWriter.write(chunk);
+    yield chunk;
   }
 
   /**
-   * Emit multiple chunks to output.
+   * Flush buffered part: apply flatMapFn and yield chunks.
    */
-  async function emitChunks(chunks: InferUIMessageChunk<UI_MESSAGE>[]) {
-    for (const chunk of chunks) {
-      await emitChunk(chunk);
-    }
-  }
-
-  /**
-   * Flush buffered part: apply flatMapFn and emit.
-   */
-  async function flushBufferedPart(
+  async function* flushBufferedPart(
     completedPart: InferUIMessagePart<UI_MESSAGE>,
-  ) {
+  ): AsyncGenerator<InferUIMessageChunk<UI_MESSAGE>> {
     isBufferingCurrentPart = false;
     allParts.push(completedPart);
 
@@ -224,63 +198,61 @@ export function flatMapUIMessageStream<
           ? bufferedChunks
           : serializePartToChunks(result, bufferedChunks);
 
-      await emitChunks(chunksToEmit);
+      for (const chunk of chunksToEmit) {
+        yield* emitChunks(chunk);
+      }
     }
 
     bufferedChunks = [];
   }
 
   /**
-   * Main processing loop.
+   * Main processing generator.
    */
-  async function processChunks() {
+  async function* processChunks(): AsyncGenerator<
+    InferUIMessageChunk<UI_MESSAGE>
+  > {
     try {
       while (true) {
-        const { done, value: chunk } = await reader.read();
+        const { done, value: chunk } = await streamReader.read();
         if (done) {
-          uiStreamController.close();
+          streamReader.close();
           break;
         }
 
         // Handle meta chunks - pass through immediately
         if (isMetaChunk(chunk)) {
-          await outputWriter.write(chunk);
-          // Feed to uiStream but don't await (may or may not emit)
-          uiStreamController.enqueue(chunk);
+          yield chunk;
+          await streamReader.enqueue(chunk);
           continue;
         }
 
-        // Handle step boundaries specially - they don't trigger message emission
+        // Handle step boundaries specially
         if (isStepStartChunk(chunk)) {
           bufferedStartStep = chunk;
           stepHasContent = false;
-          // Feed to uiStream but don't await iterator (no emission)
-          uiStreamController.enqueue(chunk);
+          await streamReader.enqueue(chunk);
           continue;
         }
 
         if (isStepEndChunk(chunk)) {
-          if (stepStartEnqueued) {
-            await outputWriter.write(chunk);
-            stepStartEnqueued = false;
+          if (stepStartEmitted) {
+            yield chunk;
+            stepStartEmitted = false;
           }
           bufferedStartStep = undefined;
-          // Feed to uiStream but don't await iterator (no emission)
-          uiStreamController.enqueue(chunk);
+          await streamReader.enqueue(chunk);
           continue;
         }
 
-        // For content chunks: feed to uiStream and get updated message
-        uiStreamController.enqueue(chunk);
-        const { done: iterDone, value: message } =
-          await uiMessageIterator.next();
+        // For content chunks: feed to stream reader and get updated message
+        const message = await streamReader.enqueue(chunk);
 
-        if (iterDone || !message) {
+        if (!message) {
           break;
         }
 
         // Get the current part (last part)
-        // Step chunks are handled earlier with continue, so the last part is always a content part
         const currentPart = message.parts[
           message.parts.length - 1
         ] as InferUIMessagePart<UI_MESSAGE>;
@@ -299,12 +271,12 @@ export function flatMapUIMessageStream<
 
             // Single-chunk parts are complete immediately
             if (isPartComplete(currentPart)) {
-              await flushBufferedPart(currentPart);
+              yield* flushBufferedPart(currentPart);
             }
           } else {
             isBufferingCurrentPart = false;
             isStreamingCurrentPart = true;
-            await emitChunk(chunk);
+            yield* emitChunks(chunk);
 
             // Single-chunk parts complete immediately
             if (isPartComplete(currentPart)) {
@@ -319,11 +291,11 @@ export function flatMapUIMessageStream<
           bufferedChunks.push(chunk);
 
           if (isPartComplete(currentPart)) {
-            await flushBufferedPart(currentPart);
+            yield* flushBufferedPart(currentPart);
           }
         } else if (isStreamingCurrentPart) {
           // Continue streaming current part
-          await emitChunk(chunk);
+          yield* emitChunks(chunk);
 
           if (isPartComplete(currentPart)) {
             isStreamingCurrentPart = false;
@@ -331,28 +303,13 @@ export function flatMapUIMessageStream<
           }
         }
       }
-
-      // Drain any remaining messages from iterator
-      while (true) {
-        const { done } = await uiMessageIterator.next();
-        if (done) break;
-      }
-
-      // Close output stream
-      await outputWriter.close();
-    } catch (error) {
-      uiStreamController.error(error);
-      await outputWriter.abort(error);
     } finally {
-      reader.releaseLock();
-      allParts.length = 0;
+      await streamReader.release();
     }
   }
 
-  // Start processing
-  processChunks();
-
-  return createAsyncIterableStream(outputTransform.readable);
+  const outputStream = convertAsyncIteratorToReadableStream(processChunks());
+  return createAsyncIterableStream(outputStream);
 }
 
 /**

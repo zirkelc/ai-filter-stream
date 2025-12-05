@@ -1,14 +1,13 @@
+import { convertAsyncIteratorToReadableStream } from '@ai-sdk/provider-utils';
 import type { AsyncIterableStream, InferUIMessageChunk, UIMessage } from 'ai';
-import { createAsyncIterableStream } from './create-async-iterable-stream.js';
+import type { InferUIMessagePart } from './types.js';
+import { createAsyncIterableStream } from './utils/create-async-iterable-stream.js';
+import { createUIMessageStreamReader } from './utils/create-ui-message-stream-reader.js';
 import {
-  buildPartialPart,
   isMetaChunk,
   isStepEndChunk,
   isStepStartChunk,
-  resolveToolPartType,
-  type ToolCallState,
-} from './stream-utils.js';
-import type { InferPartialUIMessagePart } from './types.js';
+} from './utils/stream-utils.js';
 
 /**
  * Input object provided to the chunk map function.
@@ -17,10 +16,10 @@ export type MapInput<UI_MESSAGE extends UIMessage> = {
   /** The current chunk */
   chunk: InferUIMessageChunk<UI_MESSAGE>;
   /**
-   * A partial representation of the part this chunk belongs to.
+   * The assembled part this chunk belongs to (from readUIMessageStream).
    * Use `part.type` to determine the part type.
    */
-  part: InferPartialUIMessagePart<UI_MESSAGE>;
+  part: InferUIMessagePart<UI_MESSAGE>;
 };
 
 /**
@@ -44,7 +43,7 @@ export type MapUIMessageStreamFn<UI_MESSAGE extends UIMessage> = (
 ) => InferUIMessageChunk<UI_MESSAGE> | null;
 
 /**
- * Maps/filters a UIMessageStream at the chunk level.
+ * Maps/filters a UIMessageStream at the chunk level using readUIMessageStream.
  *
  * This function processes each chunk as it arrives and allows you to:
  * - Transform chunks by returning a modified chunk
@@ -88,100 +87,87 @@ export function mapUIMessageStream<UI_MESSAGE extends UIMessage>(
   stream: ReadableStream<InferUIMessageChunk<UI_MESSAGE>>,
   mapFn: MapUIMessageStreamFn<UI_MESSAGE>,
 ): AsyncIterableStream<InferUIMessageChunk<UI_MESSAGE>> {
-  // State for the transform stream
+  // State for step boundary handling
   let bufferedStartStep: InferUIMessageChunk<UI_MESSAGE> | undefined;
-  let stepStartEnqueued = false;
-  let stepHasContent = false;
-  const toolCallStates = new Map<string, ToolCallState>();
+  let stepStartEmitted = false;
 
-  // Track all chunks and current index
+  // Track all chunks and current index for context
   const allChunks: InferUIMessageChunk<UI_MESSAGE>[] = [];
   let currentIndex = 0;
 
-  const transformStream = new TransformStream<
-    InferUIMessageChunk<UI_MESSAGE>,
+  /**
+   * Generator that yields chunks with step boundary handling.
+   */
+  async function* emitChunks(
+    chunk: InferUIMessageChunk<UI_MESSAGE>,
+  ): AsyncGenerator<InferUIMessageChunk<UI_MESSAGE>> {
+    if (bufferedStartStep) {
+      yield bufferedStartStep;
+      stepStartEmitted = true;
+      bufferedStartStep = undefined;
+    }
+    yield chunk;
+  }
+
+  /**
+   * Main processing generator.
+   */
+  async function* processChunks(): AsyncGenerator<
     InferUIMessageChunk<UI_MESSAGE>
-  >({
-    transform(chunk, controller) {
-      // Add chunk to history
+  > {
+    for await (const {
+      chunk,
+      message,
+    } of createUIMessageStreamReader<UI_MESSAGE>(stream)) {
+      // Track chunks for context
       allChunks.push(chunk);
       const index = currentIndex++;
 
-      // Always pass through meta chunks
+      // Meta chunks pass through immediately
       if (isMetaChunk(chunk)) {
-        controller.enqueue(chunk);
-        return;
+        yield chunk;
+        continue;
       }
 
-      // Buffer start-step until we know if content will be included
+      // Step boundaries - special handling
       if (isStepStartChunk(chunk)) {
         bufferedStartStep = chunk;
-        stepHasContent = false;
-        return;
+        continue;
       }
 
-      // Only enqueue finish-step if corresponding start-step was enqueued
       if (isStepEndChunk(chunk)) {
-        if (stepStartEnqueued) {
-          controller.enqueue(chunk);
-          stepStartEnqueued = false;
+        if (stepStartEmitted) {
+          yield chunk;
+          stepStartEmitted = false;
         }
         bufferedStartStep = undefined;
-        return;
+        continue;
       }
 
-      // Track tool call state for later lookups
-      if (chunk.type === 'tool-input-start') {
-        const toolChunk = chunk as {
-          type: 'tool-input-start';
-          toolCallId: string;
-          toolName: string;
-          dynamic?: boolean;
-        };
-        toolCallStates.set(toolChunk.toolCallId, {
-          toolName: toolChunk.toolName,
-          dynamic: toolChunk.dynamic,
-        });
+      // Content chunks - message should always be defined here
+      if (!message) {
+        break;
       }
 
-      // Resolve part type
-      const partType = resolveToolPartType(chunk, toolCallStates);
+      // Get the current part from AI SDK (last part)
+      const currentPart = message.parts[message.parts.length - 1]!;
 
-      // Build partial part from chunk
-      const part = buildPartialPart(chunk, partType, toolCallStates);
-
-      // Apply the map function
+      // Apply map function
       const result = mapFn(
-        { chunk, part: part as InferPartialUIMessagePart<UI_MESSAGE> },
+        {
+          chunk,
+          part: currentPart,
+        },
         { index, chunks: allChunks },
       );
 
-      // If result is null, filter out this chunk
-      if (result === null) {
-        return;
+      // If result is not null, emit with step handling
+      if (result !== null) {
+        yield* emitChunks(result);
       }
+    }
+  }
 
-      // Handle buffered start-step
-      if (bufferedStartStep && !stepHasContent) {
-        stepHasContent = true;
-        controller.enqueue(bufferedStartStep);
-        stepStartEnqueued = true;
-        bufferedStartStep = undefined;
-      }
-
-      controller.enqueue(result);
-    },
-
-    flush() {
-      // Clean up state
-      bufferedStartStep = undefined;
-      stepStartEnqueued = false;
-      stepHasContent = false;
-      toolCallStates.clear();
-      allChunks.length = 0;
-      currentIndex = 0;
-    },
-  });
-
-  return createAsyncIterableStream(stream.pipeThrough(transformStream));
+  const outputStream = convertAsyncIteratorToReadableStream(processChunks());
+  return createAsyncIterableStream(outputStream);
 }

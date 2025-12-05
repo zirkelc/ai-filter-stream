@@ -40,7 +40,7 @@ npm install ai-stream-utils
 
 ### `mapUIMessageStream`
 
-Transform or filter individual chunks as they stream through. The map function receives the chunk and a partial representation of the part it belongs to.
+Transform or filter individual chunks as they stream through. The map function receives the chunk and the assembled part it belongs to.
 
 ```typescript
 import { mapUIMessageStream } from 'ai-stream-utils';
@@ -277,7 +277,7 @@ type MapUIMessageStreamFn<UI_MESSAGE extends UIMessage> = (
 
 type MapInput<UI_MESSAGE extends UIMessage> = {
   chunk: InferUIMessageChunk<UI_MESSAGE>;
-  part: InferPartialUIMessagePart<UI_MESSAGE>;
+  part: InferUIMessagePart<UI_MESSAGE>;
 };
 
 type MapContext<UI_MESSAGE extends UIMessage> = {
@@ -325,7 +325,7 @@ function partTypeIs<UI_MESSAGE extends UIMessage, T extends InferUIMessagePartTy
 ): FlatMapUIMessageStreamPredicate<UI_MESSAGE, Extract<InferUIMessagePart<UI_MESSAGE>, { type: T }>>
 
 type FlatMapUIMessageStreamPredicate<UI_MESSAGE extends UIMessage, PART extends InferUIMessagePart<UI_MESSAGE>> = 
-  (part: InferPartialUIMessagePart<UI_MESSAGE>) => boolean;
+  (part: InferUIMessagePart<UI_MESSAGE>) => boolean;
 ```
 
 ### `filterUIMessageStream`

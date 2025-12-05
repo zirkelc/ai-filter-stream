@@ -11,6 +11,7 @@ export function createAsyncIterableStream<T>(
    * Implements the async iterator protocol for the stream.
    * Ensures proper cleanup (cancelling and releasing the reader) on completion, early exit, or error.
    */
+  // @ts-expect-error
   (stream as AsyncIterableStream<T>)[Symbol.asyncIterator] = function (
     this: ReadableStream<T>,
   ): AsyncIterator<T> {

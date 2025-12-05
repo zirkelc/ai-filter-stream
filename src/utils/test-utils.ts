@@ -5,7 +5,7 @@ import {
   type UIMessage,
 } from 'ai';
 import { z } from 'zod';
-import type { InferUIMessagePart } from './types.js';
+import type { InferUIMessagePart } from '../types.js';
 
 export type MyMetadata = { id: string };
 
@@ -178,3 +178,66 @@ export const FILE_CHUNKS: MyUIMessageChunk[] = [
   },
   { type: 'finish-step' },
 ];
+
+export const TEXT_PART: MyUIMessagePart = {
+  type: 'text',
+  text: 'Hello World',
+  state: 'done',
+};
+
+export const REASONING_PART: MyUIMessagePart = {
+  type: 'reasoning',
+  text: 'Thinking...',
+  state: 'done',
+};
+
+export const TOOL_PART: MyUIMessagePart = {
+  type: 'tool-weather',
+  toolCallId: '3',
+  state: 'output-available',
+  input: { location: 'NYC' },
+  output: { location: 'NYC', temperature: 65 },
+};
+
+export const DYNAMIC_TOOL_PART: MyUIMessagePart = {
+  type: 'dynamic-tool',
+  toolCallId: '4',
+  toolName: 'calculator',
+  state: 'output-available',
+  input: { expression: '2+2' },
+  output: { result: 4 },
+};
+
+export const TOOL_ERROR_PART: MyUIMessagePart = {
+  type: 'dynamic-tool',
+  toolCallId: '5',
+  toolName: 'failed',
+  state: 'output-error',
+  input: {},
+  errorText: 'Execution failed',
+};
+
+export const SOURCE_URL_PART: MyUIMessagePart = {
+  type: 'source-url',
+  sourceId: 'source-1',
+  url: 'https://example.com',
+  title: 'Example Source',
+};
+
+export const SOURCE_DOCUMENT_PART: MyUIMessagePart = {
+  type: 'source-document',
+  sourceId: 'source-2',
+  mediaType: 'application/pdf',
+  title: 'Document Title',
+};
+
+export const DATA_PART: MyUIMessagePart = {
+  type: 'data-weather',
+  data: { location: 'NYC', temperature: 65 },
+};
+
+export const FILE_PART: MyUIMessagePart = {
+  type: 'file',
+  url: 'https://example.com/file.pdf',
+  mediaType: 'application/pdf',
+};

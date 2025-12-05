@@ -8,13 +8,14 @@ import { mapUIMessageStream } from './map-ui-message-stream.js';
 import {
   ABORT_CHUNK,
   ERROR_CHUNK,
+  FILE_CHUNKS,
   FINISH_CHUNK,
   MESSAGE_METADATA_CHUNK,
   REASONING_CHUNKS,
   START_CHUNK,
   TEXT_CHUNKS,
   TOOL_CHUNKS,
-} from './test-utils.js';
+} from './utils/test-utils.js';
 
 describe('mapUIMessageStream', () => {
   it('should pass through all chunks with identity map', async () => {
@@ -72,6 +73,26 @@ describe('mapUIMessageStream', () => {
     ]);
   });
 
+  it('should handle single-chunk parts (file)', async () => {
+    const stream = convertArrayToReadableStream([
+      START_CHUNK,
+      ...FILE_CHUNKS,
+      FINISH_CHUNK,
+    ]);
+
+    const mappedStream = mapUIMessageStream(stream, ({ chunk, part }) => {
+      if (part.type === 'file') {
+        expect(chunk.type).toBe('file');
+      }
+      return chunk;
+    });
+
+    const result = await convertAsyncIterableToArray(mappedStream);
+
+    const fileChunks = result.filter((c) => c.type === 'file');
+    expect(fileChunks.length).toBe(1);
+  });
+
   it('should always pass through meta chunks', async () => {
     const stream = convertArrayToReadableStream([
       START_CHUNK,
@@ -112,47 +133,31 @@ describe('mapUIMessageStream', () => {
     expect(result).toEqual([START_CHUNK, FINISH_CHUNK]);
   });
 
-  it('should provide correct part.type for tool chunks', async () => {
+  it('should provide complete tool part', async () => {
     const stream = convertArrayToReadableStream([
       START_CHUNK,
       ...TOOL_CHUNKS,
       FINISH_CHUNK,
     ]);
 
-    const partTypes: string[] = [];
+    let capturedPart: unknown;
     const mappedStream = mapUIMessageStream(stream, ({ chunk, part }) => {
-      if (!['start', 'finish', 'step-start'].includes(part.type)) {
-        partTypes.push(part.type);
+      if (part.type === 'tool-weather') {
+        capturedPart = part;
       }
       return chunk;
     });
 
     await convertAsyncIterableToArray(mappedStream);
 
-    // All tool chunks should have the same part type
-    expect(partTypes.every((t) => t === 'tool-weather')).toBe(true);
-  });
-
-  it('should provide part with id for text chunks', async () => {
-    const stream = convertArrayToReadableStream([
-      START_CHUNK,
-      ...TEXT_CHUNKS,
-      FINISH_CHUNK,
-    ]);
-
-    const partIds: (string | undefined)[] = [];
-    const mappedStream = mapUIMessageStream(stream, ({ chunk, part }) => {
-      if (part.type === 'text') {
-        partIds.push((part as { id?: string }).id);
-      }
-      return chunk;
+    // Part should have all tool properties populated
+    expect(capturedPart).toMatchObject({
+      type: 'tool-weather',
+      toolCallId: '3',
+      state: 'output-available',
+      input: { location: 'NYC' },
+      output: { temperature: 65 },
     });
-
-    await convertAsyncIterableToArray(mappedStream);
-
-    // Text chunks should have id '1'
-    expect(partIds.length).toBe(4); // text-start, 2x text-delta, text-end
-    expect(partIds.every((id) => id === '1')).toBe(true);
   });
 
   it('should provide index and chunks array in context', async () => {
@@ -207,7 +212,7 @@ describe('mapUIMessageStream', () => {
     expect(lastChunksSnapshot[5]?.type).toBe('text-end');
   });
 
-  it('should provide partial part with chunk data', async () => {
+  it('should provide partial part with accumulated text', async () => {
     const stream = convertArrayToReadableStream([
       START_CHUNK,
       ...TEXT_CHUNKS,
@@ -217,7 +222,7 @@ describe('mapUIMessageStream', () => {
     const textContents: (string | undefined)[] = [];
     const mappedStream = mapUIMessageStream(stream, ({ chunk, part }) => {
       if (part.type === 'text') {
-        // For text-delta chunks, part.text contains the delta
+        // AI SDK's readUIMessageStream accumulates text in part.text
         textContents.push((part as { text?: string }).text);
       }
       return chunk;
@@ -225,7 +230,8 @@ describe('mapUIMessageStream', () => {
 
     await convertAsyncIterableToArray(mappedStream);
 
-    // text-start has no text, text-delta has the delta, text-end has no text
-    expect(textContents).toEqual([undefined, 'Hello', ' World', undefined]);
+    // AI SDK behavior: text is accumulated, not delta-based
+    // text-start: '' (empty), text-delta: 'Hello', text-delta: 'Hello World', text-end: 'Hello World'
+    expect(textContents).toEqual(['', 'Hello', 'Hello World', 'Hello World']);
   });
 });

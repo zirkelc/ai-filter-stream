@@ -1,6 +1,6 @@
 {
   "name": "ai-stream-utils",
-  "version": "0.0.3",
+  "version": "1.0.0",
   "description": "AI SDK: Filter and transform UI messages while streaming to the client",
   "packageManager": "pnpm@10.0.0",
   "main": "./dist/index.mjs",
